@@ -111,15 +111,15 @@ void set_service_state(){
 
 int main(int argc, char *argv[]) {
 
-    wprintf(L"num args=%d",argc);
-    // wprintf(L"args=%S",argv[1]);
+    // wprintf(L"num args=%d",argc);
+    // // wprintf(L"args=%S",argv[1]);
 
-    for (int i = 0; i < argc; i++) {
-        printf("%s\n", argv[i]);
-    }
+    // for (int i = 0; i < argc; i++) {
+    //     printf("%s\n", argv[i]);
+    // }
 
     // get_radio();
-    // get_devices();
+    get_devices();
     // get_services();
     //set_service_state();
     wprintf(L"done");
