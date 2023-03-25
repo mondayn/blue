@@ -1,21 +1,28 @@
 #pragma region includes
 #include <iostream>
-//#include <stdint.h>
-//using namespace std;
-// #pragma once
-// #include <winapifamily.h>
-#include <windows.h>
-#include <bthsdpdef.h>
-#include <bthdef.h>
+
+#include <string>
+
+#include <algorithm>    // remove_if
+#include <locale>       //codecvt_utf8
+#include <codecvt>
+
+#include <windows.h>    // WCHAR
+
 #include "bluetoothapis.h"
+// #include <bthsdpdef.h>
+// #include <bthdef.h>
 // #include <tchar.h>
-// #include <strsafe.h>
+
+// to compile: g++ bt.cpp -o bt.exe -lbthprops -static
 //#pragma comment(lib, "Bthprops.lib")
 // "C:\Program Files (x86)\Windows Kits\8.1\Include\um\bluetoothapis.h"
+
+using namespace std;
 #pragma endregion includes
 
-
 HANDLE get_radio() {
+    /* get first bluetooth radio, will be called by get devices */
     BLUETOOTH_FIND_RADIO_PARAMS radioParam;
     radioParam.dwSize = sizeof(BLUETOOTH_FIND_RADIO_PARAMS);
 
@@ -28,9 +35,22 @@ HANDLE get_radio() {
     return hRadio; 
   }
 
+string convert_wstr(WCHAR szName[BLUETOOTH_MAX_NAME_SIZE]){
+    /* convert wide char array to narrow string, keep only alphanum and spaces */
+    using convert_type = std::codecvt_utf8<wchar_t>;
+    std::wstring_convert<convert_type, wchar_t> converter;
 
-BLUETOOTH_DEVICE_INFO get_devices(){
+    std::wstring szNameWstr(szName);
+    std::string s = converter.to_bytes( szNameWstr );
+    s.erase(std::remove_if(s.begin(), s.end(),
+        []( auto const& c ) -> bool { return !std::isalnum(c) && c !=' '; } ), s.end());
 
+    return s;
+}
+
+
+BLUETOOTH_DEVICE_INFO get_devices(string device_name){
+    /* https://learn.microsoft.com/en-us/windows/win32/api/bluetoothapis/nf-bluetoothapis-bluetoothfindfirstdevice */
     BLUETOOTH_DEVICE_SEARCH_PARAMS srch;
     srch.fReturnAuthenticated = TRUE;
     srch.fReturnRemembered = TRUE;
@@ -43,85 +63,49 @@ BLUETOOTH_DEVICE_INFO get_devices(){
 
     BLUETOOTH_DEVICE_INFO btdi;
     btdi.dwSize = sizeof(btdi);
-
+    
     HBLUETOOTH_DEVICE_FIND hFind = BluetoothFindFirstDevice(&srch, &btdi);
-    do {
-        wprintf(L"%S\n",btdi.szName);
-    //   BOOL BluetoothFindNextDevice(
-    //   HBLUETOOTH_DEVICE_FIND hFind,
-    //   BLUETOOTH_DEVICE_INFO  *pbtdi
+    do {            
+        string s = convert_wstr(btdi.szName);
+        if(s == device_name){
+            std::cout << s << " matched" << endl;
+            break;
+        } else {
+            std::cout << s << " not matched" << endl;
+        }
     } while(BluetoothFindNextDevice(hFind, &btdi));
+
     BluetoothFindDeviceClose(hFind);
     return btdi;
 }
 
-
-void get_services() {
-//     DWORD BluetoothEnumerateInstalledServices(
-//   HANDLE                      hRadio,
-//   const BLUETOOTH_DEVICE_INFO *pbtdi,
-//   DWORD                       *pcServiceInout,
-//   GUID                        *pGuidServices
-// );
-    // DWORD pcServiceInout;
-    // GUID pGuidServices[16];
-    // BLUETOOTH_DEVICE_INFO pbtdi = get_devices();
-    // BluetoothEnumerateInstalledServices(
-    //     get_radio()
-    //     ,&pbtdi
-    //     ,&pcServiceInout
-    //     ,pGuidServices
-    // );
-    // wprintf(L"Services found %d",pcServiceInout);
-    // for(int i=0;i<6;i++){
-    //     wprintf(L"%S\n",pGuidServices[i]);
-    //     // std::cout<< pGuidServices[i] << ' ';
-    // }
-
-    //from bthdef.h
-    // DEFINE_GUID(AudioSinkServiceClass_UUID,0x0000110B,0x0000,0x1000,0x80,0x00,0x00,0x80,0x5F,0x9B,0x34,0xFB);
-    //DEFINE_GUID(HandsfreeServiceClass_UUID,0x0000111E,0x0000,0x1000,0x80,0x00,0x00,0x80,0x5F,0x9B,0x34,0xFB);
-    // wprintf(L"%S",pGuidServices);
-
-// btcom -b %airpods% -r -s110b
-// btcom -b %airpods% -r -s111e
-
-    // wprintf(L"done printing guid services");
-    // BLUETOOTH_DEVICE_INFO *pbtdi,
-    // DWORD *pcServices,
-    // GUID *pGuidServices
-}
-
-
-void set_service_state(){
-    //     private const uint BLUETOOTH_SERVICE_DISABLE = 0;
-// private const uint BLUETOOTH_SERVICE_ENABLE = 0x00000001;
+void set_service_state(string device_name){
     
-// DWORD BluetoothSetServiceState(
-//   HANDLE                      hRadio,
-//   const BLUETOOTH_DEVICE_INFO *pbtdi,
-//   const GUID                  *pGuidService,
-//   DWORD                       dwServiceFlags
-// );
-      
-//       BluetoothSetServiceState(pointer.Handle, ref deviceInfo, ref serviceRef, 0);
-// BluetoothSetServiceState(pointer.Handle, ref deviceInfo, ref serviceRef, 1);
+    HANDLE radio = get_radio();
+    BLUETOOTH_DEVICE_INFO deviceInfo = get_devices(device_name);
+    GUID AudioSinkServiceClass_UUID = { 0x0000110B,0x0000,0x1000,0x80,0x00,0x00,0x80,0x5F,0x9B,0x34,0xFB };
+    GUID HandsfreeServiceClass_UUID = { 0x0000111E,0x0000,0x1000,0x80,0x00,0x00,0x80,0x5F,0x9B,0x34,0xFB };
 
+    // const uint BLUETOOTH_SERVICE_DISABLE = 0;
+    // const uint BLUETOOTH_SERVICE_ENABLE = 0x00000001;
+
+    // disconnect
+    BluetoothSetServiceState(radio,&deviceInfo,&AudioSinkServiceClass_UUID,0);
+    BluetoothSetServiceState(radio,&deviceInfo,&HandsfreeServiceClass_UUID,0);
+
+    // then connect
+    BluetoothSetServiceState(radio,&deviceInfo,&AudioSinkServiceClass_UUID,1);
+    BluetoothSetServiceState(radio,&deviceInfo,&HandsfreeServiceClass_UUID,1);
 }
 
-int main(int argc, char *argv[]) {
-
-    // wprintf(L"num args=%d",argc);
-    // // wprintf(L"args=%S",argv[1]);
-
-    // for (int i = 0; i < argc; i++) {
-    //     printf("%s\n", argv[i]);
-    // }
-
+int main(int argc, char *argv[]) 
+{
+    if(argc < 2) {
+        printf("missing device name");
+        return 0;
+    }
     // get_radio();
-    get_devices();
-    // get_services();
-    //set_service_state();
-    wprintf(L"done");
+    // get_devices(argv[1]);
+    set_service_state(argv[1]);
     return 0;
 }
